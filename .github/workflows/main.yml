@@ -25,48 +25,33 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verificar e extrair ZIP
-        shell: bash
+      - name: Extrair projeto
         run: |
-          set -eu
-          if [ ! -f ELTON_V20.zip ]; then
-            echo "ERRO: ELTON_V20.zip não foi encontrado na raiz do repositório."
-            find . -maxdepth 3 -type f
-            exit 1
-          fi
           sudo apt-get update
           sudo apt-get install -y unzip
           mkdir -p projeto
           unzip -o ELTON_V20.zip -d projeto
-          echo "Arquivos extraídos:"
-          find projeto -maxdepth 3 -type f | head -200
 
-      - name: Encontrar projeto Android
-        id: android
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar APK
         shell: bash
         run: |
           set -eu
-          GRADLEW=$(find projeto -type f -name gradlew -print -quit || true)
-          if [ -z "$GRADLEW" ]; then
-            echo "ERRO: não encontrei gradlew dentro do ZIP."
-            echo "Verificando arquivos Gradle:"
-            find projeto -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' -o -name 'gradle-wrapper.properties' \)
+          cd projeto
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon
+          elif [ -f app/build.gradle ] || [ -f app/build.gradle.kts ]; then
+            gradle assembleDebug --no-daemon
+          else
+            echo "Não encontrei a configuração do módulo Android."
+            find . -maxdepth 4 -type f
             exit 1
           fi
-          PROJECT_DIR=$(dirname "$GRADLEW")
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          chmod +x "$GRADLEW"
 
-      - name: Compilar APK Android
-        working-directory: .
-        shell: bash
-        run: |
-          set -eu
-          GRADLE_DIR="${{ steps.android.outputs.dir }}"
-          cd "$GRADLE_DIR"
-          ./gradlew assembleDebug --no-daemon
-
-      - name: Publicar APK para download
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: ELTON-V20-APK
