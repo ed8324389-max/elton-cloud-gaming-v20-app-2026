@@ -1,112 +1,64 @@
 
-name: Gerar APK ELTON CLOUD GAMING V20
+name: Gerar APK ELTON V20
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    paths:
+      - "ELTON_V20.zip"
+      - ".github/workflows/main.yml"
 
 jobs:
   build:
-    name: Compilar APK Android
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Verificar e extrair ZIP
-        shell: bash
-        run: |
-          set -e
-          if [ ! -f ELTON_V20.zip ]; then
-            echo "ERRO: ELTON_V20.zip não encontrado."
-            ls -la
-            exit 1
-          fi
-
-          mkdir -p projeto
-          unzip -oq ELTON_V20.zip -d projeto
-
-          echo "Conteúdo do projeto:"
-          find projeto -maxdepth 4 -type f | head -200
-
-      - name: Configurar Java 17
+      - name: Preparar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+          cache: gradle
 
-      - name: Localizar projeto Android
+      - name: Extrair projeto V20
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          mkdir -p projeto
+          unzip -o ELTON_V20.zip -d projeto
+
+      - name: Encontrar Gradle
+        id: gradle
         shell: bash
         run: |
-          set -e
-
-          GRADLEW=""
-          while IFS= read -r arquivo; do
-            pasta="$(dirname "$arquivo")"
-            if [ -f "$pasta/settings.gradle" ] || \
-               [ -f "$pasta/settings.gradle.kts" ] || \
-               [ -f "$pasta/build.gradle" ] || \
-               [ -f "$pasta/build.gradle.kts" ]; then
-              GRADLEW="$arquivo"
-              break
-            fi
-          done < <(find "$GITHUB_WORKSPACE/projeto" \
-            -type f -name gradlew -print)
+          GRADLEW=$(find projeto -type f -name gradlew -print -quit)
 
           if [ -z "$GRADLEW" ]; then
-            echo "ERRO: Gradle Wrapper não encontrado."
-            echo "Arquivos de configuração encontrados:"
-            find projeto -type f \
-              \( -name 'settings.gradle*' \
-              -o -name 'build.gradle*' \
-              -o -name 'gradle-wrapper.properties' \) -print
+            echo "ERRO: não encontrei o arquivo gradlew."
+            echo "Conteúdo do ZIP:"
+            find projeto -maxdepth 4 -type f | head -200
             exit 1
           fi
 
-          echo "GRADLEW=$GRADLEW" >> "$GITHUB_ENV"
-          echo "PROJETO_ANDROID=$(dirname "$GRADLEW")" \
-            >> "$GITHUB_ENV"
-
-      - name: Preparar Gradle
-        shell: bash
-        run: |
-          set -e
-          cd "$PROJETO_ANDROID"
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
           chmod +x "$GRADLEW"
-          "$GRADLEW" --version
 
-      - name: Compilar APK
-        shell: bash
+      - name: Compilar APK Android
+        working-directory: projeto
         run: |
-          set -e
-          cd "$PROJETO_ANDROID"
-          "$GRADLEW" --no-daemon assembleDebug
+          GRADLEW=$(find . -type f -name gradlew -print -quit)
+          cd "$(dirname "$GRADLEW")"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Preparar arquivo APK
-        shell: bash
-        run: |
-          set -e
-          mkdir -p entrega
-
-          find "$GITHUB_WORKSPACE/projeto" \
-            -type f -path '*/build/outputs/apk/debug/*.apk' \
-            -exec cp {} entrega/ \;
-
-          if ! ls entrega/*.apk >/dev/null 2>&1; then
-            echo "ERRO: A compilação não gerou nenhum APK."
-            exit 1
-          fi
-
-          ls -lh entrega/
-
-      - name: Disponibilizar APK para download
+      - name: Publicar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: ELTON-CLOUD-GAMING-V20-APK
-          path: entrega/*.apk
+          name: ELTON-V20-APK
+          path: projeto/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
