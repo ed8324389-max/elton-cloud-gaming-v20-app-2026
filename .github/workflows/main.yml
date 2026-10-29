@@ -8,6 +8,9 @@ on:
       - "ELTON_V20.zip"
       - ".github/workflows/main.yml"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,42 +20,50 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Preparar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
-      - name: Extrair projeto V20
+      - name: Verificar e extrair ZIP
+        shell: bash
         run: |
+          set -eu
+          if [ ! -f ELTON_V20.zip ]; then
+            echo "ERRO: ELTON_V20.zip não foi encontrado na raiz do repositório."
+            find . -maxdepth 3 -type f
+            exit 1
+          fi
           sudo apt-get update
           sudo apt-get install -y unzip
           mkdir -p projeto
           unzip -o ELTON_V20.zip -d projeto
+          echo "Arquivos extraídos:"
+          find projeto -maxdepth 3 -type f | head -200
 
-      - name: Encontrar Gradle
-        id: gradle
+      - name: Encontrar projeto Android
+        id: android
         shell: bash
         run: |
-          GRADLEW=$(find projeto -type f -name gradlew -print -quit)
-
+          set -eu
+          GRADLEW=$(find projeto -type f -name gradlew -print -quit || true)
           if [ -z "$GRADLEW" ]; then
-            echo "ERRO: não encontrei o arquivo gradlew."
-            echo "Conteúdo do ZIP:"
-            find projeto -maxdepth 4 -type f | head -200
+            echo "ERRO: não encontrei gradlew dentro do ZIP."
+            echo "Verificando arquivos Gradle:"
+            find projeto -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' -o -name 'gradle-wrapper.properties' \)
             exit 1
           fi
-
           PROJECT_DIR=$(dirname "$GRADLEW")
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
           chmod +x "$GRADLEW"
 
       - name: Compilar APK Android
-        working-directory: projeto
+        working-directory: .
+        shell: bash
         run: |
-          GRADLEW=$(find . -type f -name gradlew -print -quit)
-          cd "$(dirname "$GRADLEW")"
-          chmod +x gradlew
+          set -eu
+          GRADLE_DIR="${{ steps.android.outputs.dir }}"
+          cd "$GRADLE_DIR"
           ./gradlew assembleDebug --no-daemon
 
       - name: Publicar APK para download
